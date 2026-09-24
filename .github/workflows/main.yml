@@ -1,0 +1,60 @@
+name: Build GSI
+
+on:
+  workflow_dispatch: # يتيح لك تشغيل البناء يدويًا من تبويب Actions
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Maximize Build Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 2048
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+
+      - name: Set up Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev \
+          libc6-dev-i386 x11proto-core-dev libx11-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig
+
+      - name: Install Repo Tool
+        run: |
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: Initialize and Sync Source
+        run: |
+          mkdir android-gsi
+          cd android-gsi
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          
+          # استبدل الرابط أدناه بـ Manifest الخاص بالنظام الذي تريد بناؤه (مثل TrebleDroid أو Infinity-X)
+          repo init -u https://github.com/ProjectInfinity-X/manifest -b 17 --depth=1
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+      - name: Build GSI
+        run: |
+          cd android-gsi
+          source build/envsetup.sh
+          # اختيار الهدف (Target) بناءً على نوع النظام (arm64 ab أو غيره)
+          lunch treble_arm64_bgN-userdebug
+          make gsi_arm64-userdebug -j$(nproc --all)
+
+      - name: Upload Output Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: GSI-Redmi14C
+          path: android-gsi/out/target/product/*/*.img
