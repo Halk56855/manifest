@@ -1,7 +1,7 @@
-name: Build GSI
+name: Build Infinity-X GSI
 
 on:
-  workflow_dispatch: # يتيح لك تشغيل البناء يدويًا من تبويب Actions
+  workflow_dispatch:
 
 jobs:
   build:
@@ -11,22 +11,25 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Maximize Build Space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 2048
-          swap-size-mb: 1024
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
+      # 1. تفريغ أقصى مساحة ممكنة من القرص لتجنب خطأ No Space Left
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo apt-get clean
+          df -h
 
-      - name: Set up Environment
+      # 2. تثبيت الحزم المتطلبة
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev \
-          libc6-dev-i386 x11proto-core-dev libx11-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig
+          libc6-dev-i386 x11proto-core-dev libx11-dev libgl1-mesa-dev libxml2-utils xsltproc unzip git-lfs
 
+      # 3. إعداد أداة Repo
       - name: Install Repo Tool
         run: |
           mkdir -p ~/bin
@@ -34,27 +37,29 @@ jobs:
           chmod a+x ~/bin/repo
           echo "$HOME/bin" >> $GITHUB_PATH
 
-      - name: Initialize and Sync Source
+      # 4. تنزيل الكود المصدر (Sync) باستخدام الخيارات الموصى بها
+      - name: Initialize and Sync
         run: |
-          mkdir android-gsi
-          cd android-gsi
+          mkdir workspace
+          cd workspace
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           
-          # استبدل الرابط أدناه بـ Manifest الخاص بالنظام الذي تريد بناؤه (مثل TrebleDroid أو Infinity-X)
-          repo init -u https://github.com/ProjectInfinity-X/manifest -b 17 --depth=1
+          # تهيئة الـ Repo من مستودع Project Infinity-X مع تقليل العمق لتوفير المساحة
+          repo init -u https://github.com/ProjectInfinity-X/manifest -b 17 --depth=1 --no-repo-verify
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
+      # 5. بدء عملية البناء
       - name: Build GSI
         run: |
-          cd android-gsi
+          cd workspace
           source build/envsetup.sh
-          # اختيار الهدف (Target) بناءً على نوع النظام (arm64 ab أو غيره)
           lunch treble_arm64_bgN-userdebug
           make gsi_arm64-userdebug -j$(nproc --all)
 
-      - name: Upload Output Image
+      # 6. ضغط ورَفْع الملف الناتج
+      - name: Compress & Upload Image
         uses: actions/upload-artifact@v4
         with:
-          name: GSI-Redmi14C
-          path: android-gsi/out/target/product/*/*.img
+          name: InfinityX-GSI-Redmi14C
+          path: workspace/out/target/product/*/*.img
